@@ -1,0 +1,76 @@
+/* frontend/css/polish.css — «флагманский» лоск: только внешний вид, логику не трогает.
+   Подключается ПОСЛЕ style.css и risk.css. Уважает prefers-reduced-motion. */
+:root { --ease: cubic-bezier(.16, 1, .3, 1); --shadow-1: 0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.08);
+        --shadow-2: 0 8px 24px -6px rgba(15,23,42,.14), 0 2px 6px rgba(15,23,42,.06); }
+
+/* мягкий фон и шрифт */
+body { -webkit-font-smoothing: antialiased; background: radial-gradient(1200px 500px at 85% -10%, rgba(59,130,246,.07), transparent 60%), var(--bg-light); }
+
+/* карточки: лёгкий подъём при наведении */
+.dash-card { box-shadow: var(--shadow-1); transition: box-shadow .25s var(--ease), transform .25s var(--ease), border-color .25s; }
+.risk-kpi:hover { box-shadow: var(--shadow-2); transform: translateY(-3px); border-color: #CBD5E1; }
+.risk-kpi { animation: kpiIn .6s var(--ease) both; }
+.risk-kpi:nth-child(2) { animation-delay: .06s } .risk-kpi:nth-child(3) { animation-delay: .12s }
+.risk-kpi:nth-child(4) { animation-delay: .18s } .risk-kpi:nth-child(5) { animation-delay: .24s }
+@keyframes kpiIn { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* боковое меню: акцентная полоска «выезжает» */
+.nav-item { position: relative; transition: background .2s, color .2s, padding-left .25s var(--ease); }
+.nav-item:hover { padding-left: 28px; }
+.nav-item.active { background: linear-gradient(90deg, rgba(59,130,246,.22), rgba(59,130,246,0)); }
+.nav-item .icon { transition: transform .25s var(--ease); }
+.nav-item:hover .icon, .nav-item.active .icon { transform: scale(1.15); }
+
+/* кнопки: отклик на нажатие */
+.egov-btn-primary, .egov-btn-secondary, .egov-btn-success { transition: transform .15s var(--ease), box-shadow .2s, background .2s; }
+.egov-btn-primary:hover { box-shadow: 0 8px 18px -4px rgba(59,130,246,.45); }
+.egov-btn-primary:active, .egov-btn-secondary:active, .egov-btn-success:active { transform: scale(.97); }
+button:disabled { opacity: .6; cursor: progress; }
+
+/* поля: плавное свечение фокуса */
+.egov-select, .egov-input-group input, .risk-field input { transition: border-color .2s, box-shadow .2s, background .2s; }
+.egov-select:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+
+/* вкладки: подчёркивание плавно «переезжает» */
+.risk-tab { position: relative; border-bottom-color: transparent !important; }
+.risk-tab::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 3px; background: var(--accent-color);
+                   border-radius: 3px 3px 0 0; transform: scaleX(0); transition: transform .3s var(--ease); }
+.risk-tab.active::after { transform: scaleX(1); }
+
+/* таблицы: строки проявляются, шапка «стеклянная», наведение подсвечивает строку */
+.data-table tbody tr, .google-sheet tbody tr { animation: rowIn .3s ease both; }
+@keyframes rowIn { from { opacity: 0; } to { opacity: 1; } }
+.data-table tbody tr:nth-child(2) { animation-delay: .02s } .data-table tbody tr:nth-child(3) { animation-delay: .04s }
+.data-table tbody tr:nth-child(4) { animation-delay: .06s } .data-table tbody tr:nth-child(5) { animation-delay: .08s }
+.data-table tbody tr:nth-child(6) { animation-delay: .10s } .data-table tbody tr:nth-child(7) { animation-delay: .12s }
+.google-sheet th { backdrop-filter: blur(6px); background: rgba(248,250,252,.92); }
+.data-table tr:hover td { background: #F1F5F9; transition: background .15s; }
+
+/* полоски баллов «заполняются» */
+.risk-score-bar { transform-origin: left; animation: barGrow .8s var(--ease) both; }
+@keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* бейджи: лёгкое появление */
+.risk-badge { animation: pop .35s var(--ease) both; }
+@keyframes pop { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* поле ввода итоговой оценки: цветная подсветка и «вспышка» при сохранении */
+.grade-input { transition: background .2s, box-shadow .2s, transform .12s; }
+.grade-input:focus { transform: scale(1.04); }
+.grade-input.changed { box-shadow: inset 0 0 0 2px rgba(245,158,11,.55); background: rgba(245,158,11,.08); }
+
+/* тонкие скроллбары */
+* { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; } *::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* всплывающие уведомления вместо alert() */
+#toast-box { position: fixed; right: 24px; bottom: 24px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.toast { pointer-events: auto; max-width: 380px; padding: 14px 18px; border-radius: 10px; background: #0F172A; color: #fff; font-size: 14px; line-height: 1.4;
+         box-shadow: var(--shadow-2); border-left: 4px solid var(--accent-color); animation: toastIn .4s var(--ease) both; }
+.toast.error { border-left-color: #EF4444; } .toast.ok { border-left-color: #10B981; }
+.toast.out { animation: toastOut .3s ease both; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { to { opacity: 0; transform: translateX(30px); } }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

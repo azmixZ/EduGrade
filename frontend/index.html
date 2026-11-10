@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduGrade — платформа итоговой аттестации</title>
+    <meta name="description" content="EduGrade: итоговые оценки, аналитика, группа риска и точки роста для колледжей.">
+    <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/risk.css">
+    <link rel="stylesheet" href="css/polish.css">
+    <link rel="stylesheet" href="css/brand.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .col-del { position: absolute; top: 1px; right: 3px; background: none; border: none; color: #CBD5E1; font-size: 14px; line-height: 1; cursor: pointer; }
+        .col-del:hover { color: #EF4444; }
+        .google-sheet th.exam-col { background: #EFF6FF; color: #1D4ED8; }
+        .google-sheet td input.changed { background: rgba(16, 185, 129, 0.12); }
+        .google-sheet td input.invalid { background: rgba(239, 68, 68, 0.18); }
+        .egov-btn-secondary:disabled { opacity: 0.6; cursor: wait; }
+        .empty-note { padding: 40px; text-align: center; color: var(--text-muted); font-size: 15px; }
+        /* цвет оценки по 100-балльной шкале */
+        .google-sheet td input.lvl-5 { color: #059669; }
+        .google-sheet td input.lvl-4 { color: #2563EB; }
+        .google-sheet td input.lvl-3 { color: #D97706; }
+        .google-sheet td input.lvl-0 { color: #DC2626; }
+        .google-sheet td input.lvl-n { color: #94A3B8; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="auth-wrapper">
+        <div class="auth-mesh"></div>
+        <div class="auth-card animate-fade-up">
+            <div class="auth-logo">
+                <img src="img/edugrade-mark.svg" alt="EduGrade" class="brand-mark">
+                <h2 class="brand-word">Edu<b>Grade</b></h2>
+                <p>Платформа итоговой аттестации студентов</p>
+            </div>
+            <form id="login-form" onsubmit="handleLogin(event)">
+                <div class="egov-input-group"><label>ИИН или Логин</label><input type="text" id="username" required></div>
+                <div class="egov-input-group"><label>Пароль</label><input type="password" id="password" required></div>
+                <button type="submit" class="egov-btn-primary block">Войти в систему</button>
+            </form>
+        </div>
+        <div class="auth-features"><span>📊 Аналитика</span><span>🎯 Точки роста</span><span>🛡 Группа риска</span></div>
+
+    </div>
+
+    <div id="app-screen" style="display: none;">
+        <header class="top-header">
+            <div class="header-left">
+                <img src="img/edugrade-mark.svg" alt="EduGrade" class="header-logo">
+                <div class="header-title">
+                    <span class="ru-title brand-word">Edu<b>Grade</b></span>
+                    <span class="kz-title">ИТОГОВАЯ АТТЕСТАЦИЯ</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="user-profile">
+                    <div class="avatar" id="avatar-circle">И</div>
+                    <div class="user-info">
+                        <span class="user-name" id="current-user-name">Иванов И.И.</span>
+                        <span class="user-role" id="current-user-role">Преподаватель</span>
+                    </div>
+                </div>
+                <button class="logout-btn" onclick="logout()">Выход</button>
+            </div>
+        </header>
+
+        <div class="app-body">
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <div class="nav-section" id="teacher-menu">
+                        <span class="nav-label">Учебный процесс</span>
+                        <button class="nav-item active" onclick="switchView('grid-view', this)"><span class="icon">📝</span> Итоговая ведомость</button>
+                    </div>
+
+                    <div class="nav-section admin-only" id="admin-menu" style="display: none;">
+                        <span class="nav-label">Аналитика и контроль</span>
+                        <button class="nav-item" onclick="switchView('dashboard-view', this)"><span class="icon">🎛</span> Главная панель</button>
+                        <button class="nav-item" onclick="switchView('performance-view', this)"><span class="icon">📊</span> Успеваемость (Итог)</button>
+                        <button class="nav-item" onclick="switchView('analytics-view', this)"><span class="icon">📈</span> Аналитика</button>
+                        <button class="nav-item" onclick="switchView('risk-view', this)"><span class="icon">⚠️</span> Группа риска</button>
+                        <button class="nav-item" onclick="switchView('pullup-view', this)"><span class="icon">🎯</span> Можно подтянуть</button>
+                        <button class="nav-item" onclick="switchView('logs-view', this)"><span class="icon">📜</span> Журнал действий</button>
+                        <br>
+                        <span class="nav-label">Система</span>
+                        <button class="nav-item" onclick="switchView('users-view', this)"><span class="icon">👥</span> Управление правами</button>
+                    </div>
+                </nav>
+            </aside>
+
+            <main class="main-content">
+                <!-- 1. ВЕДОМОСТЬ -->
+                <section id="grid-view" class="view-panel active animate-fade-up">
+                    <div class="panel-header">
+                        <h2>Итоговая ведомость</h2>
+                        <div class="toolbar" style="flex-wrap: wrap;">
+                            <select class="egov-select" id="group-selector" style="min-width: 150px;"><option value="">Группа...</option></select>
+                            <select class="egov-select" id="subject-selector" style="min-width: 260px;"><option value="">Предмет...</option></select>
+                            <button class="egov-btn-secondary" onclick="exportJournal(this)">📤 Excel</button>
+                            <button class="egov-btn-success" onclick="saveAllGrades()" style="margin-left: auto;">💾 Сохранить ведомость</button>
+                        </div>
+                    </div>
+                    <div class="risk-hint" style="margin: -8px 0 12px;">Вносите итоговые оценки из бумажного журнала: балл от 0 до 100 или «Н» (не аттестован). Оценка 5 / 4 / 3 считается автоматически: 90–100 → 5, 70–89 → 4, 50–69 → 3, ниже 50 → неаттестация.</div>
+                    <div class="risk-hint" id="sheet-progress" style="margin: 0 0 12px; font-weight: 600;"></div>
+                    <div class="spreadsheet-container"><table class="google-sheet" id="grade-sheet"><thead></thead><tbody></tbody></table></div>
+                </section>
+
+                <!-- 2. АДМИН: ГЛАВНАЯ ПАНЕЛЬ С ГРАФИКАМИ -->
+                <section id="dashboard-view" class="view-panel animate-fade-up" style="display: none;">
+                    <div class="panel-header"><h2>Главная панель системы</h2></div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; flex: 1; padding-bottom: 24px;">
+                        <div class="dash-card stat-box flex-card" style="border-left: 4px solid #3B82F6;">
+                            <span class="stat-label">Студентов в базе</span><div class="stat-value" id="stat-students">0</div>
+                            <div class="sparkline-container"><canvas id="spark-students"></canvas></div>
+                        </div>
+                        <div class="dash-card stat-box flex-card" style="border-left: 4px solid #10B981;">
+                            <span class="stat-label">Оценок выставлено</span><div class="stat-value" id="stat-grades">0</div>
+                            <div class="sparkline-container"><canvas id="spark-grades"></canvas></div>
+                        </div>
+                        <div class="dash-card stat-box flex-card" style="border-left: 4px solid #F59E0B;">
+                            <span class="stat-label">Учебных групп</span><div class="stat-value" id="stat-groups">0</div>
+                            <div class="sparkline-container"><canvas id="spark-groups"></canvas></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. АДМИН: УСПЕВАЕМОСТЬ -->
+                <section id="performance-view" class="view-panel animate-fade-up" style="display: none;">
+                    <div class="panel-header"><h2>Общая успеваемость по колледжу (Итоговые)</h2></div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; flex: 1; padding-bottom: 24px;">
+                        <div class="dash-card flex-card">
+                            <h3>Срез итоговых оценок (Количественно)</h3>
+                            <div class="chart-container"><canvas id="barChart"></canvas></div>
+                        </div>
+                        <div class="dash-card flex-card">
+                            <h3>Доля успеваемости (%)</h3>
+                            <div class="chart-container"><canvas id="doughnutChart"></canvas></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. АДМИН: СКРОЛЛИРУЕМАЯ АНАЛИТИКА (ОТДЕЛЕНИЯ И ГРУППЫ) -->
+                <section id="analytics-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
+                    <div class="panel-header"><h2>Аналитика (Сравнение отделений)</h2>
+                        <div class="toolbar"><button class="egov-btn-secondary" onclick="exportAllGroups(this)">⬇ Excel: сравнение всех групп</button></div>
+                    </div>
+                    <div class="analytics-grid">
+                        <div class="dash-card flex-card">
+                            <h3>Успеваемость: Цифровые технологии vs Проф-Педагогическое</h3>
+                            <div class="chart-container"><canvas id="deptCompareChart"></canvas></div>
+                        </div>
+                    </div>
+
+                    <div class="panel-header" style="margin-top: 20px;">
+                        <h2>Сравнение групп</h2>
+                        <div class="toolbar" style="flex-wrap: wrap;">
+                            <select class="egov-select" id="group-a-select" onchange="renderGroupCharts()"></select>
+                            <span style="font-weight:bold; color:var(--text-muted); font-size:14px;">VS</span>
+                            <select class="egov-select" id="group-b-select" onchange="renderGroupCharts()"></select>
+                            <button class="egov-btn-secondary" onclick="exportGroupReport(this)" title="Отчёт по группе A: сводка, предметы, ведомости">⬇ Отчёт по группе A</button>
+                            <button class="egov-btn-secondary" onclick="exportCompare(this)" title="Сравнение групп A и B">⬇ Сравнение A и B</button>
+                        </div>
+                    </div>
+                    <div class="analytics-grid">
+                        <div class="dash-card flex-card">
+                            <h3>Сравнение показателей</h3>
+                            <div class="chart-container"><canvas id="groupVsGroupChart"></canvas></div>
+                        </div>
+                        <div class="dash-card flex-card">
+                            <!-- ЗДЕСЬ ТЕПЕРЬ БУДЕТ ВОЛНА ИЗ ЭСКИЗА -->
+                            <h3>Волновой график (Распределение оценок)</h3> 
+                            <div class="chart-container"><canvas id="groupWaveChart"></canvas></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4b. АДМИН: МОЖНО ПОДТЯНУТЬ (1–2 итоговые тройки, остальные 4–5) -->
+                <section id="pullup-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Можно подтянуть</h2>
+                        <div class="toolbar" style="flex-wrap: wrap;">
+                            <button class="egov-btn-secondary" onclick="pullupToggleSettings()">⚙ Параметры</button>
+                            <button class="egov-btn-primary" onclick="exportPullup(this)">⬇ Скачать отчёт</button>
+                        </div>
+                    </div>
+                    <div class="risk-hint" style="margin: -8px 0 16px;">Студенты, у которых итоговых троек не больше двух, по остальным предметам 4 и 5, неаттестации нет. Достаточно подтянуть один-два предмета, чтобы стать хорошистом.</div>
+                    <div id="pullup-settings" class="dash-card risk-settings" style="display: none;"></div>
+                    <div class="risk-kpis" id="pullup-kpis"></div>
+                    <div class="risk-tabs">
+                        <button class="risk-tab active" data-tab="students" onclick="pullupTab('students')">Студенты <span class="risk-count" id="pc-students">0</span></button>
+                        <button class="risk-tab" data-tab="groups" onclick="pullupTab('groups')">По группам <span class="risk-count" id="pc-groups">0</span></button>
+                    </div>
+                    <div class="risk-filters" id="pullup-filters">
+                        <select class="egov-select" id="pullup-dept" onchange="renderPullup()" style="min-width: 240px;"></select>
+                        <select class="egov-select" id="pullup-easy" onchange="renderPullup()" style="min-width: 190px;">
+                            <option value="">Все случаи</option><option value="1">Только лёгкие</option>
+                        </select>
+                        <input type="search" class="egov-select" id="pullup-search" placeholder="Поиск по ФИО, группе или предмету…" oninput="renderPullup()" style="min-width: 280px;">
+                    </div>
+                    <div class="dash-card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+                        <div style="overflow-x: auto;">
+                            <table class="google-sheet data-table risk-table" id="pullup-table" style="width: 100%; border: none;"><thead></thead><tbody></tbody></table>
+                        </div>
+                    </div>
+                    <div class="risk-hint" id="pullup-hint"></div>
+                </section>
+
+                <!-- 4a. АДМИН: ГРУППА РИСКА (слабые группы, слабые студенты, мёртвые души) -->
+                <section id="risk-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Группа риска</h2>
+                        <div class="toolbar" style="flex-wrap: wrap;">
+                            <button class="egov-btn-secondary" onclick="riskToggleSettings()">⚙ Пороги</button>
+                            <button class="egov-btn-secondary" onclick="exportRisk('groups', this)">⬇ Слабые группы</button>
+                            <button class="egov-btn-secondary" onclick="exportRisk('students', this)">⬇ Слабые студенты</button>
+                            <button class="egov-btn-secondary" onclick="exportRisk('dead', this)">⬇ Мёртвые души</button>
+                            <button class="egov-btn-primary" onclick="exportRisk('all', this)">⬇ Полный отчёт</button>
+                        </div>
+                    </div>
+
+                    <div id="risk-settings" class="dash-card risk-settings" style="display: none;"></div>
+
+                    <div class="risk-kpis" id="risk-kpis"></div>
+
+                    <div class="risk-tabs">
+                        <button class="risk-tab active" data-tab="groups" onclick="riskSwitchTab('groups')">Слабые группы <span class="risk-count" id="rc-groups">0</span></button>
+                        <button class="risk-tab" data-tab="students" onclick="riskSwitchTab('students')">Слабые студенты <span class="risk-count" id="rc-students">0</span></button>
+                        <button class="risk-tab" data-tab="dead" onclick="riskSwitchTab('dead')">Мёртвые души <span class="risk-count" id="rc-dead">0</span></button>
+                        <button class="risk-tab" data-tab="nodata" onclick="riskSwitchTab('nodata')">Группы без данных <span class="risk-count" id="rc-nodata">0</span></button>
+                    </div>
+
+                    <div class="risk-filters" id="risk-filters">
+                        <select class="egov-select" id="risk-dept" onchange="renderRiskTab()" style="min-width: 240px;"></select>
+                        <select class="egov-select" id="risk-level" onchange="renderRiskTab()" style="min-width: 170px;"></select>
+                        <input type="search" class="egov-select" id="risk-search" placeholder="Поиск по ФИО или группе…" oninput="renderRiskTab()" style="min-width: 240px;">
+                    </div>
+
+                    <div class="dash-card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+                        <div style="overflow-x: auto;">
+                            <table class="google-sheet data-table risk-table" id="risk-table" style="width: 100%; border: none;">
+                                <thead></thead><tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="risk-hint" id="risk-hint"></div>
+                </section>
+
+                <!-- 5. АДМИН: ЛОГИ -->
+                <section id="logs-view" class="view-panel animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Журнал действий системы (Аудит)</h2>
+                        <div class="toolbar">
+                            <input type="search" class="egov-select" placeholder="Поиск: ФИО, группа, предмет, преподаватель…" oninput="logsSearchInput(this.value)" style="min-width: 340px;">
+                            <button class="egov-btn-secondary" id="logs-prev" onclick="logsGo(-1)">← Назад</button>
+                            <span id="logs-page" style="font-size: 13px; color: var(--text-muted); min-width: 170px; text-align: center;"></span>
+                            <button class="egov-btn-secondary" id="logs-next" onclick="logsGo(1)">Вперёд →</button>
+                        </div>
+                    </div>
+                    <div class="dash-card flex-card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+                        <div style="overflow-y: auto; flex: 1;">
+                            <table class="google-sheet data-table" id="audit-table" style="width: 100%; border: none;">
+                                <thead style="position: sticky; top: 0; z-index: 2;">
+                                    <tr>
+                                        <th style="width: 130px;">Дата и Время</th><th style="width: 100px;">Месяц</th>
+                                        <th style="width: 120px;">Группа</th><th style="width: 220px;">Предмет</th>
+                                        <th style="width: 200px;">Студент</th>
+                                        <th>Действие (Оценка)</th><th style="width: 160px;">Преподаватель</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 6. АДМИН: УПРАВЛЕНИЕ ПРАВАМИ -->
+                <section id="users-view" class="view-panel animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Управление учетными записями</h2>
+                        <div class="toolbar" style="flex-wrap: wrap;">
+                            <button class="egov-btn-secondary" onclick="usersSelectNever()" title="Отметить тех, кто ещё ни разу не входил в систему">Выбрать не входивших</button>
+                            <button class="egov-btn-secondary" onclick="exportUsers(this)">⬇ Список пользователей</button>
+                            <button class="egov-btn-primary" onclick="issuePasswords(this)">🔑 Выдать пароли выбранным</button>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 2.4fr; grid-template-rows: minmax(0, 1fr); gap: 24px; flex: 1; min-height: 0; padding-bottom: 24px;">
+                        <div class="dash-card flex-card">
+                            <h3>Регистрация сотрудника</h3>
+                            <form onsubmit="handleCreateUser(event)" style="display: flex; flex-direction: column; flex: 1;">
+                                <div class="egov-input-group"><label>Логин / ИИН</label><input type="text" id="new-username" required></div>
+                                <div class="egov-input-group"><label>ФИО</label><input type="text" id="new-fullname" required></div>
+                                <div class="egov-input-group"><label>Пароль</label><input type="password" id="new-password" required></div>
+                                <div class="egov-input-group"><label>Уровень доступа</label><select id="new-role" class="egov-select" style="width: 100%;"><option value="teacher">Преподаватель</option><option value="admin">Администратор</option></select></div>
+                                <div style="margin-top: auto;"><button type="submit" class="egov-btn-primary block">Создать аккаунт</button></div>
+                            </form>
+                        </div>
+                        <div class="dash-card flex-card" style="padding: 0; overflow: hidden; min-height: 0;">
+                            <h3 style="padding: 24px 24px 0;">Зарегистрированные пользователи</h3>
+                            <div style="overflow: auto; flex: 1; min-height: 0; padding: 0 24px 24px;">
+                                <table class="google-sheet data-table" id="users-table" style="width: 100%;">
+                                    <thead><tr><th style="width: 40px;"><input type="checkbox" id="users-all" onchange="usersToggleAll(this.checked)" title="Выбрать всех"></th><th style="width: 60px;">ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Последний вход</th></tr></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+    <script src="js/risk.js"></script>
+    <script src="js/extras.js"></script>
+    <script src="js/pullup.js"></script>
+    <script src="js/polish.js"></script>
+</body>
+</html>

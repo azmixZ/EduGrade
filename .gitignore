@@ -1,0 +1,23 @@
+# окружение и кэш
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# база, бэкапы, ключи и пароли
+*.db
+backups/
+.secret_key
+password.txt
+teachers_new.csv
+*.env
+
+# данные колледжа (ФИО студентов и преподавателей)
+backend/seed.py
+backend/seed_students_fix.py
+backend/plans/
+*.docx
+
+.vscode/
+.idea/
+Thumbs.db
