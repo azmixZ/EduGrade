@@ -1,71 +1,92 @@
 # EduGrade
 
-Электронная ведомость итоговой аттестации для колледжа. Преподаватели ставят итоговые оценки
-своим группам, администрация видит сводку по всему колледжу и выгружает отчёты в Excel.
+Electronic final-grade register for a college. Teachers enter final grades for their groups;
+the administration sees the whole college at once: analytics by department and group, students at risk,
+and Excel reports in one click. Built for and used at a college in Kostanay, Kazakhstan.
 
-Бэкенд — FastAPI + SQLite, фронтенд — обычные HTML/CSS/JS без сборки.
+![Teacher's grade register](docs/screenshots/register.png)
 
-## Что умеет
+*Screenshots use a generated demo college; all names are fictional.*
 
-- вход по логину и паролю, у каждого преподавателя видны только его группы и предметы;
-- 100-балльная шкала: 90–100 — «5», 70–89 — «4», 50–69 — «3», ниже 50 — неаттестация, «Н» — неявка;
-- админка: статистика, аналитика по отделениям и группам, журнал действий, управление пользователями
-  и выдача паролей;
-- «Группа риска» — слабые группы и студенты, а также «мёртвые души» (студенты без единой оценки);
-- «Можно подтянуть» — студенты, которым до хорошиста не хватает одного-двух предметов;
-- выгрузки в Excel: ведомость преподавателя, отчёт по группе, сравнение групп, списки риска.
+## What it does
 
-## Запуск
+**For teachers**
+- log in and see only your own groups and subjects;
+- 100-point scale with automatic conversion: 90–100 → 5, 70–89 → 4, 50–69 → 3, below 50 → not certified, «Н» → absent;
+- export your register to Excel.
 
-Нужен Python 3.10 или новее.
+**For the administration**
+- dashboard and per-department / per-group analytics, with side-by-side comparison of any two groups;
+- **At-risk module**: weak groups and students with configurable thresholds, plus "dead souls": students with no grades at all;
+- **Can be pulled up**: students one or two subjects away from a better result;
+- Excel reports: group report, group comparison, college-wide comparison, risk lists;
+- user management with password issuing, plus an audit log of every grade change.
 
-На Windows достаточно дважды щёлкнуть `start.bat` — он создаст окружение, поставит зависимости
-и откроет меню. Или вручную:
+**Security**
+- JWT sessions with revocation (a password change or block logs out every device), bcrypt hashes;
+- forced password change on first login, login rate limiting, CORS and proxy settings via environment variables.
+
+| Analytics | At-risk students |
+|---|---|
+| ![Analytics](docs/screenshots/analytics.png) | ![At-risk module](docs/screenshots/risk.png) |
+
+## Stack
+
+Backend: Python · FastAPI · SQLAlchemy · SQLite · python-jose · bcrypt · openpyxl
+Frontend: plain HTML / CSS / JavaScript, no build step · Chart.js
+
+## Try it with demo data
+
+Requires Python 3.10+.
 
 ```bash
 pip install -r backend/requirements.txt
+python backend/demo_seed.py --fresh          # fictional college: 12 groups, ~270 students, 8 teachers
+python backend/demo_fill.py --yes --dead 3   # demo grades, including a few "dead souls"
 python run.py start
 ```
 
-Сайт откроется на http://127.0.0.1:5500, API работает на порту 8000.
-Первый вход — `admin` / `admin`, пароль система сразу попросит сменить.
+The site opens at http://127.0.0.1:5500 and the API runs on port 8000.
+Log in as `admin` / `admin` (you'll be asked to change the password) or as `teacher1`…`teacher8` / `demo`.
 
-Другие команды `run.py`:
+On Windows you can just double-click `start.bat`: it creates the environment, installs dependencies and opens a menu.
 
-| команда | что делает |
+### Other `run.py` commands
+
+| command | what it does |
 |---|---|
-| `python run.py` | меню |
-| `python run.py clear` | удалить все оценки и журнал действий |
-| `python run.py new` | пересоздать базу без оценок |
-| `python run.py demo` | проставить демонстрационные оценки |
+| `python run.py` | interactive menu |
+| `python run.py clear` | delete all grades and the audit log |
+| `python run.py new` | recreate the database without grades |
+| `python run.py demo` | fill in demo grades |
 
-Перед любой из них база копируется в `backups/`.
+The database is backed up to `backups/` before any of them.
 
-## Данные
+## Real data
 
-Списки студентов (`backend/seed.py`, `backend/seed_students_fix.py`) и учебные планы
-(`backend/plans/*.xls[x]`) в репозиторий не входят — там персональные данные.
-Без них база создаётся пустой, кроме администратора. Чтобы заполнить её, положите эти файлы
-на место и выполните `python backend/setup_db.py --fresh`.
+Student lists (`backend/seed.py`, `backend/seed_students_fix.py`) and curricula (`backend/plans/*.xls[x]`)
+contain personal data and are not in the repository. With them in place, `python backend/setup_db.py --fresh`
+builds the production database.
 
-## Настройки
+## Configuration
 
-Задаются переменными окружения:
+Environment variables:
 
-| переменная | по умолчанию | |
+| variable | default | |
 |---|---|---|
-| `KKCI_SECRET_KEY` | создаётся в `backend/.secret_key` | ключ для подписи токенов |
-| `KKCI_TOKEN_MINUTES` | `720` | время жизни сессии в минутах |
-| `KKCI_ALLOWED_ORIGINS` | `*` | разрешённые домены (CORS), на сервере лучше указать свой |
-| `KKCI_RATE_LIMIT` | `600` | запросов в минуту с одного IP |
-| `KKCI_TRUST_PROXY` | `0` | `1`, если сервер стоит за nginx |
-| `KKCI_DEBUG` | `0` | `1` открывает `/docs` |
+| `KKCI_SECRET_KEY` | generated into `backend/.secret_key` | token signing key |
+| `KKCI_TOKEN_MINUTES` | `720` | session lifetime, minutes |
+| `KKCI_ALLOWED_ORIGINS` | `*` | allowed CORS origins; set your domain in production |
+| `KKCI_RATE_LIMIT` | `600` | requests per minute per IP |
+| `KKCI_TRUST_PROXY` | `0` | `1` when running behind nginx |
+| `KKCI_DEBUG` | `0` | `1` enables `/docs` |
 
-## Структура
+## Layout
 
 ```
-backend/    API, модели, отчёты, скрипты заполнения базы
-frontend/   страница, стили и скрипты
-run.py      запуск и обслуживание
-start.bat   то же для Windows
+backend/    API, models, reports, database scripts
+frontend/   page, styles and scripts
+docs/       screenshots
+run.py      start and maintenance
+start.bat   the same for Windows
 ```
