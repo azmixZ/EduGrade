@@ -50,6 +50,13 @@
 #users-view > div:nth-of-type(2) { min-height: 0; grid-template-rows: minmax(0, 1fr); }
 #users-view .flex-card { min-height: 0; }
 #users-table th { position: sticky; top: 0; z-index: 2; }
+#users-table { table-layout: auto; }                       /* девять колонок не помещаются в фиксированную раскладку */
+#users-table td, #users-table th { vertical-align: middle; }
+#users-table td:nth-child(5) { white-space: nowrap; }      /* роль */
+#users-table th, #users-table td { padding: 8px 5px; font-size: 12.5px; }
+#users-table th { font-size: 11px; }
+#users-table select { font-size: 12px; }
+#users-table input[type=checkbox] { width: 16px; height: 16px; padding: 0; }
 
 #pullup-view > * { flex-shrink: 0; }
 #curator-view > *, #reconcile-view > * { flex-shrink: 0; }

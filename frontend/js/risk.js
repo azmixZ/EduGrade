@@ -137,7 +137,7 @@ function pctOf(a, b) { return b ? (a * 100 / b).toFixed(1) : '0.0'; }
 // ---------- вкладки и таблицы
 function riskSwitchTab(tab) {
     riskTab = tab;
-    document.querySelectorAll('.risk-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('#risk-view .risk-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));   // только свои вкладки
     const lvl = $('risk-level');
     lvl.innerHTML = (RISK_LEVELS[tab] || []).map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('');
     lvl.style.display = RISK_LEVELS[tab] ? '' : 'none';
