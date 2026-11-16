@@ -7,7 +7,8 @@
     python demo_fill.py --yes      # потом проставить демо-оценки
 
 Создаёт отделения, специальности, 12 групп по 18–25 студентов, 8 преподавателей
-(логины teacher1…teacher8, пароль demo) и их нагрузку. ФИО генерируются случайно.
+(логины teacher1…teacher8, пароль demo) и их нагрузку; teacher1 — заведующий отделением, у групп есть кураторы,
+контингент по списку и одна выпускная группа. ФИО генерируются случайно.
 """
 import argparse
 import os
@@ -98,16 +99,24 @@ def main():
         for dep_name, specs in DEPARTMENTS.items():
             dep = models.Department(name=dep_name)
             db.add(dep)
+            db.flush()
+            if dep_name == "Информационные технологии":
+                teachers[0].head_department_id = dep.id   # teacher1 — заведующий отделением (видит аналитику отделения)
             for code, spec_name in specs:
                 spec = models.Specialty(code=code, name=spec_name, department=dep)
                 db.add(spec)
                 for course, year in ((1, 25), (2, 24)):
                     g = models.Group(name=f"{code}-{course}-{year}", specialty=spec)
+                    if groups % 6 != 5:                                  # у части групп куратора нет — видно в «Доступе»
+                        g.curator_id = rng.choice(teachers).id
+                    g.graduating = (code == "ДЗ" and course == 2)        # выпускная группа: итоги семестра = итоговая аттестация
                     db.add(g)
                     groups += 1
-                    for _ in range(rng.randint(18, 25)):
+                    n = rng.randint(18, 25)
+                    for _ in range(n):
                         db.add(models.Student(full_name=fake_name(rng), group=g))
                         students += 1
+                    g.contingent = n + rng.choice([0, 0, 0, 1, -1, 2])    # «официальный список»: иногда не совпадает с системой
                     db.flush()
                     for subj in SUBJECTS[code]:
                         db.add(models.Workload(teacher=rng.choice(teachers), subject=subjects[subj], group=g))

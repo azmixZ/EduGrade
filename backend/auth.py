@@ -82,3 +82,32 @@ def check_admin(current_user: models.User = Depends(get_current_user)) -> models
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Недостаточно прав. Требуется роль Администратора.")
     return current_user
+
+
+# ---- Заведующий отделением: преподаватель с head_department_id. Видит аналитику своего отделения
+# (статистика, риски, «можно подтянуть», единственные тройки, контроль заполнения), но не управляет
+# пользователями, паролями, доступами и не видит журнал действий.
+def dept_scope(user: models.User):
+    """None — весь колледж (админ); id отделения — заведующий."""
+    return None if user.role == "admin" else user.head_department_id
+
+
+def is_analyst(user: models.User) -> bool:
+    return user.role == "admin" or bool(user.head_department_id)
+
+
+def check_analyst(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if not is_analyst(current_user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав. Раздел для администратора и заведующих отделениями.")
+    return current_user
+
+
+def dept_group_ids(db: Session, dept_id: int) -> set:
+    return {gid for (gid,) in db.query(models.Group.id).join(models.Specialty, models.Group.specialty_id == models.Specialty.id)
+            .filter(models.Specialty.department_id == dept_id).all()}
+
+
+def check_group_in_scope(db: Session, user: models.User, gid: int):
+    dept = dept_scope(user)
+    if dept is not None and gid not in dept_group_ids(db, dept):
+        raise HTTPException(status_code=403, detail="Эта группа не относится к вашему отделению")

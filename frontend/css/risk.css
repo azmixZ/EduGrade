@@ -52,3 +52,60 @@
 #users-table th { position: sticky; top: 0; z-index: 2; }
 
 #pullup-view > * { flex-shrink: 0; }
+#curator-view > *, #reconcile-view > * { flex-shrink: 0; }
+
+/* ---- «Доступ преподавателей» ---- */
+#access-view > * { flex-shrink: 0; }
+.access-layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; padding-bottom: 24px; }
+.access-list { padding: 14px; position: sticky; top: 0; max-height: calc(100vh - 220px); display: flex; flex-direction: column; gap: 10px; }
+#access-list-items { overflow-y: auto; flex: 1; margin: 0 -6px; }
+.acc-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; margin: 0 6px 2px; }
+.acc-item:hover { background: #F1F5F9; }
+.acc-item.active { background: rgba(59,130,246,.10); border-color: rgba(59,130,246,.35); }
+.acc-item.off { opacity: .55; }
+.acc-item-name { font-weight: 600; font-size: 14px; color: var(--text-main); }
+.acc-item-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+#access-detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.acc-card { padding: 18px 20px; }
+.acc-card h4 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 12px; }
+.acc-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.acc-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.acc-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.acc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 6px 5px 12px; border-radius: 16px; background: #E0F2FE; color: #0369A1; font-weight: 600; font-size: 13px; }
+.acc-chip button { border: none; background: none; color: #0369A1; cursor: pointer; font-size: 13px; padding: 0 4px; }
+.acc-chip button:hover { color: #DC2626; }
+.acc-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.acc-two .acc-card { display: flex; flex-direction: column; gap: 6px; }
+.acc-two .acc-card button { margin-top: 10px; align-self: flex-start; }
+.acc-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
+.acc-full { width: 100%; }
+.acc-check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 8px; cursor: pointer; }
+.acc-link { background: none; border: none; color: var(--accent-color); font-weight: 600; font-size: 13px; cursor: pointer; padding: 2px 6px; }
+.acc-link:hover { text-decoration: underline; }
+.acc-link.danger { color: #DC2626; }
+.acc-toast { position: fixed; right: 24px; bottom: 24px; max-width: 460px; background: #0F172A; color: #FFF; padding: 12px 18px; border-radius: 8px;
+             font-size: 14px; z-index: 1100; opacity: 0; transform: translateY(10px); transition: .25s; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+.acc-toast.bad { background: #B45309; }
+.acc-toast.show { opacity: 1; transform: none; }
+@media (max-width: 1200px) { .access-layout, .acc-two { grid-template-columns: 1fr; } .access-list { position: static; max-height: 360px; } }
+
+/* ---- сводная таблица куратора ---- */
+#curator-table.cs-matrix { table-layout: auto; width: auto !important; min-width: 100%; }
+#curator-table.cs-matrix th, #curator-table.cs-matrix td { padding: 6px 8px; font-size: 13px; min-width: 0; white-space: nowrap; }
+#curator-table.cs-matrix td.c { min-width: 42px; }
+#curator-table.cs-matrix thead th { position: sticky; top: 0; z-index: 3; background: var(--sheet-header-bg); vertical-align: bottom; }
+#curator-table.cs-matrix th.cs-vert { height: 190px; min-width: 44px; max-width: 44px; padding: 6px 2px; }
+#curator-table.cs-matrix th.cs-vert > div { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); max-height: 180px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; margin: 0 auto; font-weight: 600; text-align: left; }
+#curator-table.cs-matrix th.cs-vert small { font-weight: 400; color: var(--text-muted); }
+#curator-table.cs-matrix td.cs-name, #curator-table.cs-matrix th.cs-name { position: sticky; left: 0; z-index: 2; background: #FFF; min-width: 220px; white-space: nowrap; }
+#curator-table.cs-matrix thead th.cs-name { z-index: 4; background: var(--sheet-header-bg); }
+#curator-table.cs-matrix td.c { text-align: center; font-weight: 600; }
+#curator-table.cs-matrix td.m5 { background: #D1FAE5; color: #047857; }
+#curator-table.cs-matrix td.m4 { background: #DBEAFE; color: #1D4ED8; }
+#curator-table.cs-matrix td.m3 { background: #FEF3C7; color: #B45309; }
+#curator-table.cs-matrix td.m0 { background: #FEE2E2; color: #B91C1C; }
+#curator-table.cs-matrix td.mn { background: #E2E8F0; color: #475569; }
+#curator-table.cs-matrix td.empty { color: #CBD5E1; }
+#curator-table.cs-matrix tr.cs-foot td { background: #F8FAFC; font-weight: 700; border-top: 2px solid #CBD5E1; }
+#curator-table.cs-matrix td.cs-sep, #curator-table.cs-matrix th.cs-sep { border-left: 2px solid #CBD5E1; }

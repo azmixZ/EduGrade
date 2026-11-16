@@ -22,6 +22,11 @@ import models
 import reports
 import risk_api
 import users_api
+import curator_api
+import access_api
+import students_api
+import periods
+import notify
 from common import TRUST_PROXY, XLSX_MIME, add_log, client_ip, now_str, xlsx_response
 import security as sec
 from grading import GRADE_ORDER, bucket, calc_metrics, normalize_grade, points
@@ -110,13 +115,15 @@ async def validation_exception(request: Request, exc: RequestValidationError):
 # ==========================================
 # ВСПОМОГАТЕЛЬНОЕ
 # ==========================================
-def final_lesson(db: Session, workload: models.Workload) -> models.Lesson:
-    """Итоговая колонка ведомости. Система хранит только итоговые оценки: на одну нагрузку — ровно одна колонка.
-    Если её ещё нет (новая ведомость), она создаётся автоматически."""
+def final_lesson(db: Session, workload: models.Workload, period: str) -> models.Lesson:
+    """Итоговая колонка ведомости за период аттестации: на одну нагрузку — одна колонка на каждый период.
+    Если её ещё нет (новая ведомость или новый период), она создаётся автоматически."""
     lesson = (db.query(models.Lesson).filter(models.Lesson.workload_id == workload.id,
-                                            models.Lesson.lesson_type == "final").order_by(models.Lesson.id).first())
+                                            models.Lesson.lesson_type == "final",
+                                            models.Lesson.period == period).order_by(models.Lesson.id).first())
     if lesson is None:
-        lesson = models.Lesson(workload_id=workload.id, date_str=FINAL_LABEL, lesson_type="final")
+        lesson = models.Lesson(workload_id=workload.id, date_str=periods.COLUMN[period], lesson_type="final",
+                               period=period)
         db.add(lesson)
         db.commit()
         db.refresh(lesson)
@@ -143,7 +150,16 @@ def user_out(u: models.User) -> dict:
         "id": u.id, "username": u.username, "full_name": u.full_name, "role": u.role,
         "is_active": bool(u.is_active), "last_login": u.last_login or "",
         "must_change_password": bool(u.must_change_password),
+        "head_department_id": u.head_department_id,
     }
+
+
+def head_name(db: Session, user: models.User) -> str:
+    """Название отделения, которым заведует пользователь ("" — не заведующий)."""
+    if user.role == "admin" or not user.head_department_id:
+        return ""
+    d = db.get(models.Department, user.head_department_id)
+    return d.name if d else ""
 
 
 # ==========================================
@@ -175,6 +191,9 @@ class JournalData(BaseModel):
     students: List[StudentOut]
     lessons: List[LessonOut]
     grades: List[GradeOut]
+    period: str = "oct"
+    period_title: str = ""
+    editable: bool = True
 
 
 class GradeItem(BaseModel):
@@ -246,13 +265,60 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
         "role": user.role,
         "full_name": user.full_name,
         "must_change_password": bool(user.must_change_password),
+        "head": head_name(db, user),
     }
 
 
+@app.get("/api/periods")
+def get_periods(_: models.User = Depends(auth.get_current_user)):
+    """Периоды аттестации и какой из них сейчас открыт преподавателям."""
+    return periods.info()
+
+
+@app.get("/api/notifications")
+def get_notifications(period: Optional[str] = None, db: Session = Depends(get_db),
+                      user: models.User = Depends(auth.get_current_user)):
+    """Студенты с единственной тройкой: преподавателю — по его предметам, куратору — его группы,
+    заведующему — ещё и всё его отделение, админу — все."""
+    per = periods.resolve(period) if auth.is_analyst(user) or period else periods.current()
+    q = periods.runner(db, per)
+    if user.role == "admin":
+        items = notify.single_threes(q)
+    else:
+        items = notify.single_threes(q, teacher_id=user.id, curator_id=user.id)
+        dept = auth.dept_scope(user)
+        if dept is not None:
+            seen = {x["key"] for x in items}
+            for x in notify.single_threes(periods.runner(db, per, dept)):
+                if x["key"] not in seen:
+                    x["mine"] = False
+                    x["my_group"] = False
+                    items.append(x)
+            items.sort(key=lambda x: (x["gap"], x["group"], x["student"]))
+    return {"period": per, "period_title": periods.title(per), "items": items[:500], "total": len(items)}
+
+
+@app.get("/api/news")
+def get_news(db: Session = Depends(get_db), user: models.User = Depends(auth.get_current_user)):
+    """Окно «Что нового»: show=true, пока пользователь его не закрыл."""
+    def get_news_items():
+        is_curator = db.query(models.Group.id).filter(models.Group.curator_id == user.id).first() is not None
+        return notify.news_for(user.role, is_curator, bool(user.head_department_id))
+    return {"version": notify.NEWS_VERSION, "title": notify.NEWS_TITLE, "items": get_news_items(),
+            "show": (user.seen_news or "") != notify.NEWS_VERSION}
+
+
+@app.post("/api/news/seen")
+def news_seen(db: Session = Depends(get_db), user: models.User = Depends(auth.get_current_user)):
+    user.seen_news = notify.NEWS_VERSION
+    db.commit()
+    return {"status": "ok"}
+
+
 @app.get("/api/me")
-def me(user: models.User = Depends(auth.get_current_user)):
+def me(db: Session = Depends(get_db), user: models.User = Depends(auth.get_current_user)):
     return {"username": user.username, "full_name": user.full_name, "role": user.role,
-            "must_change_password": bool(user.must_change_password)}
+            "must_change_password": bool(user.must_change_password), "head": head_name(db, user)}
 
 
 @app.post("/api/me/password")
@@ -305,7 +371,7 @@ def get_groups(db: Session = Depends(get_db), user: models.User = Depends(auth.g
 
 
 @app.get("/api/journal/{group_id}", response_model=JournalData)
-def get_journal(group_id: int, subject_id: Optional[int] = None,
+def get_journal(group_id: int, subject_id: Optional[int] = None, period: Optional[str] = None,
                 db: Session = Depends(get_db), user: models.User = Depends(auth.get_current_user)):
     group = db.get(models.Group, group_id)
     if not group:
@@ -318,7 +384,9 @@ def get_journal(group_id: int, subject_id: Optional[int] = None,
     students = (db.query(models.Student)
                 .filter(models.Student.group_id == group_id)
                 .order_by(models.Student.full_name).all())
-    lessons = [final_lesson(db, workload)]
+    # преподаватель всегда работает в текущем по календарю периоде, администратор может открыть любой
+    per = periods.resolve(period) if user.role == "admin" else periods.current()
+    lessons = [final_lesson(db, workload, per)]
     lesson_ids = [l.id for l in lessons]
     grades = (db.query(models.Grade).filter(models.Grade.lesson_id.in_(lesson_ids)).all()
               if lesson_ids else [])
@@ -334,6 +402,9 @@ def get_journal(group_id: int, subject_id: Optional[int] = None,
                     for l in lessons],
         "grades": [{"student_id": g.student_id, "lesson_id": g.lesson_id, "value": g.value or ""}
                    for g in grades],
+        "period": per,
+        "period_title": periods.title(per, bool(group.graduating)),
+        "editable": user.role == "admin" or per == periods.current(),
     }
 
 
@@ -372,6 +443,8 @@ def save_grades(batch: GradesBatch, request: Request, db: Session = Depends(get_
 
         if lesson.lesson_type != "final":
             raise HTTPException(status_code=400, detail="Система принимает только итоговые оценки")
+        if user.role != "admin" and (lesson.period or "oct") != periods.current():
+            raise HTTPException(status_code=403, detail="Этот период аттестации закрыт. Исправить оценку может администратор.")
 
         wl = checked_workloads.get(lesson.workload_id)
         if wl is None:
@@ -413,18 +486,22 @@ def save_grades(batch: GradesBatch, request: Request, db: Session = Depends(get_
 # 3. АДМИНКА: СТАТИСТИКА, АНАЛИТИКА, ПОЛЬЗОВАТЕЛИ
 # ==========================================
 @app.get("/api/admin/stats")
-def get_admin_stats(db: Session = Depends(get_db), _: models.User = Depends(auth.check_admin)):
-    students_count = db.query(func.count(models.Student.id)).scalar()
-    grades_count = db.query(func.count(models.Grade.id)).scalar()
-    groups_count = db.query(func.count(models.Group.id)).scalar()
+def get_admin_stats(period: Optional[str] = None, db: Session = Depends(get_db),
+                    user: models.User = Depends(auth.check_analyst)):
+    """Главная панель. У заведующего — только его отделение и без журнала действий."""
+    q = periods.runner(db, periods.resolve(period), auth.dept_scope(user))
+    students_count = q("SELECT COUNT(*) FROM students")[0][0]
+    grades_count = q("SELECT COUNT(*) FROM grades")[0][0]
+    groups_count = q("SELECT COUNT(*) FROM groups")[0][0]
 
     chart = {k: 0 for k in GRADE_ORDER}
-    for value, cnt in db.query(models.Grade.value, func.count()).group_by(models.Grade.value).all():
+    for value, cnt in q("SELECT value, COUNT(*) FROM grades GROUP BY value"):
         b = bucket(value)
         if b:
             chart[b] += cnt
 
-    logs_db = db.query(models.AuditLog).order_by(models.AuditLog.id.desc()).limit(100).all()
+    logs_db = (db.query(models.AuditLog).order_by(models.AuditLog.id.desc()).limit(100).all()
+               if user.role == "admin" else [])
     logs = [{
         "time": l.time, "teacher": l.teacher, "action": l.action,
         "group": l.group_name or "—", "student": l.student_name or "—",
@@ -439,18 +516,24 @@ def get_admin_stats(db: Session = Depends(get_db), _: models.User = Depends(auth
 
 
 @app.get("/api/admin/analytics")
-def get_analytics(db: Session = Depends(get_db), _: models.User = Depends(auth.check_admin)):
-    """Реальные данные для графиков: по отделениям и по группам."""
-    groups = (db.query(models.Group.id, models.Group.name, models.Department.name)
-              .outerjoin(models.Specialty, models.Group.specialty_id == models.Specialty.id)
-              .outerjoin(models.Department, models.Specialty.department_id == models.Department.id)
-              .order_by(models.Group.name).all())
+def get_analytics(period: Optional[str] = None, db: Session = Depends(get_db),
+                  user: models.User = Depends(auth.check_analyst)):
+    """Реальные данные для графиков: по отделениям и по группам (у заведующего — только его отделение)."""
+    gq = (db.query(models.Group.id, models.Group.name, models.Department.name)
+          .outerjoin(models.Specialty, models.Group.specialty_id == models.Specialty.id)
+          .outerjoin(models.Department, models.Specialty.department_id == models.Department.id))
+    dept = auth.dept_scope(user)
+    if dept is not None:
+        gq = gq.filter(models.Specialty.department_id == dept)
+    groups = gq.order_by(models.Group.name).all()
 
     students_per_group = dict(db.query(models.Student.group_id, func.count(models.Student.id))
                               .group_by(models.Student.group_id).all())
 
     rows = (db.query(models.Student.group_id, models.Grade.value, func.count(models.Grade.id))
             .join(models.Grade, models.Grade.student_id == models.Student.id)
+            .join(models.Lesson, models.Lesson.id == models.Grade.lesson_id)
+            .filter(models.Lesson.period == periods.resolve(period))
             .group_by(models.Student.group_id, models.Grade.value).all())
 
     group_dist = defaultdict(lambda: {k: 0 for k in GRADE_ORDER})
@@ -547,6 +630,38 @@ def create_user(user_data: NewUser, request: Request, db: Session = Depends(get_
     return {"status": "ok", "temp_password": password if generated else None}
 
 
+class HeadSet(BaseModel):
+    department_id: Optional[int] = None
+
+
+@app.get("/api/admin/departments")
+def list_departments(db: Session = Depends(get_db), _: models.User = Depends(auth.check_admin)):
+    return [{"id": d.id, "name": d.name} for d in db.query(models.Department).order_by(models.Department.name).all()]
+
+
+@app.post("/api/admin/users/{user_id}/head")
+def set_head(user_id: int, data: HeadSet, request: Request, db: Session = Depends(get_db),
+             admin: models.User = Depends(auth.check_admin)):
+    """Назначить преподавателя заведующим отделением (department_id) или снять (null)."""
+    target = db.get(models.User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if target.role == "admin":
+        raise HTTPException(status_code=400, detail="Администратор и так видит все отделения")
+    dept = None
+    if data.department_id is not None:
+        dept = db.get(models.Department, data.department_id)
+        if not dept:
+            raise HTTPException(status_code=404, detail="Отделение не найдено")
+    target.head_department_id = dept.id if dept else None
+    if dept:
+        target.seen_news = None          # при следующем входе покажем окно «Что нового» с разделами заведующего
+    add_log(db, admin.full_name, (f"Назначил «{target.username}» заведующим отделением «{dept.name}»" if dept
+                                  else f"Снял с «{target.username}» роль заведующего отделением"), ip=client_ip(request))
+    db.commit()
+    return {"status": "ok", "head_department_id": target.head_department_id}
+
+
 @app.post("/api/admin/users/{user_id}/reset-password")
 def reset_password(user_id: int, request: Request, data: Optional[PasswordSet] = None,
                    db: Session = Depends(get_db), admin: models.User = Depends(auth.check_admin)):
@@ -591,6 +706,45 @@ def set_user_active(user_id: int, data: ActiveToggle, request: Request, db: Sess
     return {"status": "ok"}
 
 
+@app.delete("/api/admin/users/{user_id}")
+def delete_user(user_id: int, request: Request, db: Session = Depends(get_db),
+                admin: models.User = Depends(auth.check_admin)):
+    """Удалить учётную запись. Ведомости с оценками не удаляются: их сначала нужно передать другому
+    преподавателю («Доступ преподавателей»). Пустые ведомости удаляются, кураторство снимается."""
+    target = db.get(models.User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if target.id == admin.id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить собственную учётную запись")
+    if target.role == "admin" and db.query(models.User).filter(models.User.role == "admin", models.User.id != target.id).count() == 0:
+        raise HTTPException(status_code=400, detail="Нельзя удалить последнего администратора")
+
+    workloads = db.query(models.Workload).filter(models.Workload.teacher_id == target.id).all()
+    with_grades = [w for w in workloads if db.query(models.Grade.id).join(models.Lesson)
+                   .filter(models.Lesson.workload_id == w.id).first()]
+    if with_grades:
+        names = ", ".join(sorted({f"{w.group.name if w.group else '—'}: {w.subject.name if w.subject else '—'}"
+                                  for w in with_grades})[:5])
+        raise HTTPException(status_code=409, detail=(
+            f"У преподавателя {len(with_grades)} ведомост(ей) с оценками ({names}{'…' if len(with_grades) > 5 else ''}). "
+            "Сначала передайте их другому преподавателю в разделе «Доступ преподавателей», затем удалите учётную запись."))
+
+    for w in workloads:
+        db.delete(w)
+    curated = db.query(models.Group).filter(models.Group.curator_id == target.id).all()
+    for g in curated:
+        g.curator_id = None
+    info = f"Удалил учётную запись «{target.username}» ({target.full_name})"
+    if workloads:
+        info += f", пустых ведомостей: {len(workloads)}"
+    if curated:
+        info += f", снято кураторство: {', '.join(g.name for g in curated)}"
+    db.delete(target)
+    add_log(db, admin.full_name, info, ip=client_ip(request))
+    db.commit()
+    return {"status": "ok", "workloads": len(workloads), "curated": [g.name for g in curated]}
+
+
 # ==========================================
 # 4. ВЫГРУЗКИ В EXCEL
 # ==========================================
@@ -604,7 +758,7 @@ def file_part(s: str, limit: int = 40) -> str:
 
 
 @app.get("/api/export/journal/{workload_id}")
-def export_journal(workload_id: int, db: Session = Depends(get_db),
+def export_journal(workload_id: int, period: Optional[str] = None, db: Session = Depends(get_db),
                    user: models.User = Depends(auth.get_current_user)):
     """Ведомость одного предмета (преподаватель — только свою, админ — любую)."""
     wl = db.get(models.Workload, workload_id)
@@ -612,18 +766,20 @@ def export_journal(workload_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Ведомость не найдена")
     check_workload_access(user, wl)
     try:
-        data, gname, subject = reports.journal_report(sql_runner(db), workload_id)
+        per = periods.resolve(period) if user.role == "admin" else periods.current()
+        data, gname, subject = reports.journal_report(periods.runner(db, per), workload_id)
     except reports.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     return xlsx_response(data, f"Ведомость_{file_part(gname)}_{file_part(subject)}_{datetime.now():%Y-%m-%d}.xlsx")
 
 
 @app.get("/api/export/group/{group_id}")
-def export_group(group_id: int, request: Request, db: Session = Depends(get_db),
-                 admin: models.User = Depends(auth.check_admin)):
+def export_group(group_id: int, request: Request, period: Optional[str] = None, db: Session = Depends(get_db),
+                 admin: models.User = Depends(auth.check_analyst)):
     """Полный отчёт по группе: сводка, предметы, ведомости по каждому предмету."""
+    auth.check_group_in_scope(db, admin, group_id)
     try:
-        data, gname = reports.group_report(sql_runner(db), group_id)
+        data, gname = reports.group_report(periods.runner(db, periods.resolve(period)), group_id)
     except reports.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     add_log(db, admin.full_name, "Выгрузил отчёт по группе (Excel)", group=gname, ip=client_ip(request))
@@ -632,16 +788,16 @@ def export_group(group_id: int, request: Request, db: Session = Depends(get_db),
 
 
 @app.get("/api/export/compare")
-def export_compare(request: Request, groups: str = "", db: Session = Depends(get_db),
-                   admin: models.User = Depends(auth.check_admin)):
-    """Сравнение групп. ?groups=1,2,3 — выбранные группы; без параметра — все."""
+def export_compare(request: Request, groups: str = "", period: Optional[str] = None, db: Session = Depends(get_db),
+                   admin: models.User = Depends(auth.check_analyst)):
+    """Сравнение групп. ?groups=1,2,3 — выбранные группы; без параметра — все (у заведующего — его отделения)."""
     ids = []
     if groups.strip():
         ids = [int(x) for x in groups.split(",") if re.fullmatch(r"[0-9]{1,9}", x.strip())][:100]
         if not ids:
             raise HTTPException(status_code=400, detail="Не указаны группы для сравнения")
     try:
-        data, n = reports.compare_report(sql_runner(db), ids or None)
+        data, n = reports.compare_report(periods.runner(db, periods.resolve(period), auth.dept_scope(admin)), ids or None)
     except reports.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     add_log(db, admin.full_name, f"Выгрузил сравнение групп (Excel): {n} гр.", ip=client_ip(request))
@@ -654,3 +810,6 @@ def export_compare(request: Request, groups: str = "", db: Session = Depends(get
 # ==========================================
 app.include_router(risk_api.router)
 app.include_router(users_api.router)
+app.include_router(curator_api.router)
+app.include_router(access_api.router)
+app.include_router(students_api.router)

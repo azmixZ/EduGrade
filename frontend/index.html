@@ -57,6 +57,7 @@
                     <span class="kz-title">ИТОГОВАЯ АТТЕСТАЦИЯ</span>
                 </div>
             </div>
+            <div class="period-tabs" id="period-tabs" style="display: none;"></div>
             <div class="header-right">
                 <div class="user-profile">
                     <div class="avatar" id="avatar-circle">И</div>
@@ -84,10 +85,11 @@
                         <button class="nav-item" onclick="switchView('analytics-view', this)"><span class="icon">📈</span> Аналитика</button>
                         <button class="nav-item" onclick="switchView('risk-view', this)"><span class="icon">⚠️</span> Группа риска</button>
                         <button class="nav-item" onclick="switchView('pullup-view', this)"><span class="icon">🎯</span> Можно подтянуть</button>
-                        <button class="nav-item" onclick="switchView('logs-view', this)"><span class="icon">📜</span> Журнал действий</button>
+                        <button class="nav-item admin-strict" onclick="switchView('logs-view', this)"><span class="icon">📜</span> Журнал действий</button>
                         <br>
-                        <span class="nav-label">Система</span>
-                        <button class="nav-item" onclick="switchView('users-view', this)"><span class="icon">👥</span> Управление правами</button>
+                        <span class="nav-label admin-strict">Система</span>
+                        <button class="nav-item admin-strict" onclick="switchView('users-view', this)"><span class="icon">👥</span> Управление правами</button>
+                        <button class="nav-item admin-strict" onclick="switchView('access-view', this)"><span class="icon">🔐</span> Доступ преподавателей</button>
                     </div>
                 </nav>
             </aside>
@@ -105,6 +107,8 @@
                         </div>
                     </div>
                     <div class="risk-hint" style="margin: -8px 0 12px;">Вносите итоговые оценки из бумажного журнала: балл от 0 до 100 или «Н» (не аттестован). Оценка 5 / 4 / 3 считается автоматически: 90–100 → 5, 70–89 → 4, 50–69 → 3, ниже 50 → неаттестация.</div>
+                    <div class="period-now" id="sheet-period"></div>
+                    <div id="sheet-hints"></div>
                     <div class="risk-hint" id="sheet-progress" style="margin: 0 0 12px; font-weight: 600;"></div>
                     <div class="spreadsheet-container"><table class="google-sheet" id="grade-sheet"><thead></thead><tbody></tbody></table></div>
                 </section>
@@ -145,12 +149,12 @@
 
                 <!-- 4. АДМИН: СКРОЛЛИРУЕМАЯ АНАЛИТИКА (ОТДЕЛЕНИЯ И ГРУППЫ) -->
                 <section id="analytics-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
-                    <div class="panel-header"><h2>Аналитика (Сравнение отделений)</h2>
+                    <div class="panel-header"><h2 id="analytics-title">Аналитика (Сравнение отделений)</h2>
                         <div class="toolbar"><button class="egov-btn-secondary" onclick="exportAllGroups(this)">⬇ Excel: сравнение всех групп</button></div>
                     </div>
                     <div class="analytics-grid">
                         <div class="dash-card flex-card">
-                            <h3>Успеваемость по отделениям</h3>
+                            <h3 id="dept-chart-title">Успеваемость по отделениям</h3>
                             <div class="chart-container"><canvas id="deptCompareChart"></canvas></div>
                         </div>
                     </div>
@@ -176,6 +180,71 @@
                             <div class="chart-container"><canvas id="groupWaveChart"></canvas></div>
                         </div>
                     </div>
+                </section>
+
+                <!-- КУРАТОР: контроль заполнения итоговых -->
+                <section id="curator-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Контроль заполнения</h2>
+                        <div class="toolbar" style="flex-wrap: wrap;">
+                            <select class="egov-select" id="curator-group" onchange="loadCuratorGroup()" style="min-width: 280px;"></select>
+                            <button class="egov-btn-secondary" onclick="exportCurator('completeness', this)">⬇ Контроль заполнения (Excel)</button>
+                            <button class="egov-btn-primary" onclick="exportCurator('parents', this)">⬇ Итоги для родителей (ZIP)</button>
+                            <button class="egov-btn-secondary" id="curator-all-btn" style="display: none;" onclick="exportCuratorAll(this)">⬇ По всему колледжу</button>
+                        </div>
+                    </div>
+                    <div class="risk-hint" id="curator-info" style="margin: -8px 0 16px;"></div>
+                    <div id="curator-hints"></div>
+                    <div class="risk-kpis" id="curator-kpis"></div>
+                    <div class="risk-tabs">
+                        <button class="risk-tab active" data-tab="summary" onclick="curatorSwitchTab('summary')">Сводная таблица</button>
+                        <button class="risk-tab" data-tab="subjects" onclick="curatorSwitchTab('subjects')">По предметам</button>
+                        <button class="risk-tab" data-tab="students" onclick="curatorSwitchTab('students')">По студентам</button>
+                        <button class="risk-tab" data-tab="roster" onclick="curatorSwitchTab('roster')">Состав группы</button>
+                    </div>
+                    <div class="risk-filters" id="curator-roster-bar" style="display: none;">
+                        <input type="text" class="egov-select" id="roster-new" placeholder="ФИО нового студента полностью…" style="min-width: 360px;"
+                               onkeydown="if (event.key === 'Enter') rosterAdd()">
+                        <button class="egov-btn-primary" onclick="rosterAdd()">＋ Добавить студента</button>
+                    </div>
+                    <div class="risk-filters" id="curator-summary-filters">
+                        <select class="egov-select" id="cs-sort" onchange="renderCurator()" style="min-width: 220px;">
+                            <option value="name">Сортировка: по ФИО</option>
+                            <option value="avg-desc">По среднему баллу (лучшие сверху)</option>
+                            <option value="avg-asc">По среднему баллу (слабые сверху)</option>
+                            <option value="fail">Сначала с неаттестацией</option>
+                        </select>
+                        <select class="egov-select" id="cs-filter" onchange="renderCurator()" style="min-width: 220px;">
+                            <option value="">Все студенты</option>
+                            <option value="fail">Есть неаттестация / Н</option>
+                            <option value="c3">Есть тройки</option>
+                            <option value="good">Только 4 и 5</option>
+                            <option value="missing">Есть невыставленные</option>
+                        </select>
+                        <input type="search" class="egov-select" id="cs-search" placeholder="Поиск по ФИО…" oninput="renderCurator()" style="min-width: 220px;">
+                        <button class="egov-btn-secondary" onclick="exportCurator('summary', this)">⬇ Сводная (Excel)</button>
+                    </div>
+                    <div class="dash-card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+                        <div style="overflow: auto; max-height: 70vh;" id="curator-table-wrap">
+                            <table class="google-sheet data-table risk-table" id="curator-table" style="width: 100%; border: none;"><thead></thead><tbody></tbody></table>
+                        </div>
+                    </div>
+                    <div class="risk-hint" id="curator-hint"></div>
+                </section>
+
+                <!-- АДМИН: сверка контингента со списком колледжа -->
+                <section id="reconcile-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Сверка контингента</h2>
+                        <div class="toolbar"><button class="egov-btn-primary" onclick="exportReconcile(this)">⬇ Скачать сверку (Excel)</button></div>
+                    </div>
+                    <div class="risk-kpis" id="reconcile-kpis"></div>
+                    <div class="dash-card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+                        <div style="overflow-x: auto;">
+                            <table class="google-sheet data-table risk-table" id="reconcile-table" style="width: 100%; border: none;"><thead></thead><tbody></tbody></table>
+                        </div>
+                    </div>
+                    <div class="risk-hint" id="reconcile-hint"></div>
                 </section>
 
                 <!-- 4b. АДМИН: МОЖНО ПОДТЯНУТЬ (1–2 итоговые тройки, остальные 4–5) -->
@@ -277,6 +346,29 @@
                     </div>
                 </section>
 
+                <!-- 6a. АДМИН: ДОСТУП ПРЕПОДАВАТЕЛЕЙ (группы, дисциплины, практики, кураторство) -->
+                <section id="access-view" class="view-panel view-scrollable animate-fade-up" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Доступ преподавателей</h2>
+                        <div class="toolbar">
+                            <div class="risk-tabs" style="margin: 0; border: none;">
+                                <button class="risk-tab active" data-mode="teacher" onclick="accessMode('teacher')">По преподавателям</button>
+                                <button class="risk-tab" data-mode="group" onclick="accessMode('group')">По группам <span class="risk-count" id="ac-empty" title="Групп без нагрузки">0</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="risk-hint" style="margin: -8px 0 16px;">Здесь закрепляются группы, дисциплины и практики за преподавателями (это открывает им ведомость) и назначаются кураторы. Все изменения пишутся в журнал действий.</div>
+                    <div class="access-layout">
+                        <div class="dash-card access-list">
+                            <input type="search" class="egov-select" id="access-search" placeholder="Поиск…" oninput="renderAccessList()" style="width: 100%;">
+                            <div id="access-list-items"></div>
+                        </div>
+                        <div id="access-detail">
+                            <div class="dash-card empty-note">Выберите преподавателя или группу слева.</div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- 6. АДМИН: УПРАВЛЕНИЕ ПРАВАМИ -->
                 <section id="users-view" class="view-panel animate-fade-up" style="display: none;">
                     <div class="panel-header">
@@ -302,7 +394,7 @@
                             <h3 style="padding: 24px 24px 0;">Зарегистрированные пользователи</h3>
                             <div style="overflow: auto; flex: 1; min-height: 0; padding: 0 24px 24px;">
                                 <table class="google-sheet data-table" id="users-table" style="width: 100%;">
-                                    <thead><tr><th style="width: 40px;"><input type="checkbox" id="users-all" onchange="usersToggleAll(this.checked)" title="Выбрать всех"></th><th style="width: 60px;">ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Последний вход</th></tr></thead>
+                                    <thead><tr><th style="width: 40px;"><input type="checkbox" id="users-all" onchange="usersToggleAll(this.checked)" title="Выбрать всех"></th><th style="width: 60px;">ID</th><th>Логин</th><th>ФИО</th><th>Роль</th><th>Зав. отделением</th><th>Статус</th><th>Последний вход</th><th style="width: 90px;"></th></tr></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
@@ -316,6 +408,10 @@
     <script src="js/risk.js"></script>
     <script src="js/extras.js"></script>
     <script src="js/pullup.js"></script>
+    <script src="js/curator.js"></script>
+    <script src="js/access.js"></script>
+    <script src="js/periods.js"></script>
+    <script src="js/notify.js"></script>
     <script src="js/polish.js"></script>
 </body>
 </html>

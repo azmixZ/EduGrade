@@ -74,3 +74,57 @@ button:disabled { opacity: .6; cursor: progress; }
 @keyframes toastOut { to { opacity: 0; transform: translateX(30px); } }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* «глазик» у полей пароля */
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { padding-right: 44px !important; }
+.pw-eye { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 34px; height: 34px; display: flex;
+          align-items: center; justify-content: center; background: none; border: none; border-radius: 6px; color: #64748B; cursor: pointer; }
+.pw-eye:hover { color: var(--accent-color); background: rgba(59,130,246,.08); }
+
+/* периоды аттестации: вкладки в шапке (админ, куратор) и строка над ведомостью (преподаватель) */
+.period-tabs { position: relative; z-index: 2; display: flex; align-items: center; gap: 4px; margin: 0 auto 0 32px;
+               background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 10px; padding: 4px; }
+.period-label { color: #64748B; font-size: 12px; font-weight: 600; padding: 0 8px 0 6px; white-space: nowrap; }
+.period-tab { background: none; border: none; color: #334155; font: 600 13px Roboto, sans-serif; padding: 7px 12px;
+              border-radius: 7px; cursor: pointer; white-space: nowrap; transition: background .2s, color .2s; }
+.period-tab:hover { background: #E2E8F0; }
+.period-tab.active { background: var(--accent-color, #3B82F6); color: #fff; box-shadow: 0 2px 6px rgba(59,130,246,.35); }
+.period-tab.active i { color: #D1FAE5; }
+.period-tab i { font-style: normal; font-size: 10px; font-weight: 700; color: #10B981; margin-left: 4px; text-transform: uppercase; }
+.period-now { margin: -4px 0 10px; font-size: 15px; font-weight: 700; color: var(--primary-color, #0F172A); }
+.period-now:empty { display: none; }
+.grad-check { margin-left: 12px; font-weight: 600; color: #0F172A; cursor: pointer; white-space: nowrap; }
+.grad-check input { vertical-align: -2px; margin-right: 4px; }
+@media (max-width: 1100px) { .period-label { display: none; } .period-tab { padding: 6px 8px; font-size: 12px; } .period-tabs { margin-left: 12px; } }
+
+
+/* «одна тройка до хорошиста»: блок над ведомостью / у куратора и подсветка строки */
+.hint-box { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; padding: 12px 16px; margin: 0 0 14px; font-size: 13px; color: #78350F; }
+.hint-text { line-height: 1.45; }
+.hint-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.hint-chip { border: 1px solid #FCD34D; background: #fff; color: #78350F; border-radius: 999px; padding: 6px 12px;
+             font: 500 13px Roboto, sans-serif; cursor: pointer; transition: background .2s; }
+.hint-chip b { background: #F59E0B; color: #fff; border-radius: 999px; padding: 0 7px; margin-left: 4px; }
+.hint-chip:hover, .hint-chip.active { background: #FEF3C7; border-color: #F59E0B; }
+.hint-table { width: 100%; margin-top: 10px; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+.hint-table th { text-align: left; font-size: 12px; color: #92400E; background: #FEF3C7; padding: 6px 10px; }
+.hint-table td { padding: 6px 10px; border-top: 1px solid #FEF3C7; color: #0F172A; }
+.gap-easy { color: #059669; font-weight: 700; }
+.google-sheet tr.row-one-three td { background: #FFFBEB; }
+.one-three-tag { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: #B45309; }
+
+/* окно «Что нового» */
+.news-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); z-index: 1200; display: flex; align-items: center;
+                justify-content: center; animation: kpiIn .4s var(--ease) both; }
+.news-card { max-width: 520px; position: relative; }
+.news-card h3 { color: var(--primary-color); margin: 6px 0 12px; font-size: 20px; }
+.news-card ul { margin: 0 0 20px 18px; padding: 0; font-size: 14px; color: #334155; line-height: 1.5; }
+.news-card li { margin-bottom: 8px; }
+.news-badge { display: inline-block; background: #10B981; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+              text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+
+/* подпись создателя */
+.sidebar-credit { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,.1); font-size: 12px; color: #94A3B8; }
+.sidebar-credit a { color: #E2E8F0; text-decoration: none; font-weight: 600; }
+.sidebar-credit a:hover { color: #fff; text-decoration: underline; }

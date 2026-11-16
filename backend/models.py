@@ -28,6 +28,9 @@ class Group(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     specialty_id = Column(Integer, ForeignKey("specialties.id"))
+    curator_id = Column(Integer, ForeignKey("users.id"), nullable=True)   # куратор группы (аккаунт преподавателя)
+    contingent = Column(Integer, nullable=True)                           # число студентов по официальному списку колледжа
+    graduating = Column(Boolean, nullable=False, default=False, server_default="0")  # выпускная: итоги семестра = итоговая аттестация
 
     specialty = relationship("Specialty", back_populates="groups")
     students = relationship("Student", back_populates="group", cascade="all, delete-orphan")
@@ -54,7 +57,9 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True, server_default="1")             # False = вход запрещён
     token_version = Column(Integer, nullable=False, default=0, server_default="0")            # +1 = все старые токены недействительны
     last_login = Column(String)
-    must_change_password = Column(Boolean, nullable=False, default=False, server_default="0")   # True = сменить пароль при входе
+    must_change_password = Column(Boolean, nullable=False, default=False, server_default="0")
+    head_department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)   # заведующий этим отделением (видит его аналитику)
+    seen_news = Column(String)        # версия окна «Что нового», которую пользователь уже видел   # True = сменить пароль при входе
 
     workloads = relationship("Workload", back_populates="teacher")
 
@@ -63,6 +68,7 @@ class Subject(Base):
     __tablename__ = "subjects"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    kind = Column(String, default="subject", server_default="subject")   # 'subject' = дисциплина, 'practice' = практика
 
     workloads = relationship("Workload", back_populates="subject")
 
@@ -87,6 +93,7 @@ class Lesson(Base):
     workload_id = Column(Integer, ForeignKey("workloads.id"), index=True)
     date_str = Column(String)
     date = Column(Date)                           # настоящая дата пары (для динамики и сортировки); у экзамена может быть пустой
+    period = Column(String, default="oct", index=True)   # период аттестации: oct / s1 / mar / s2 (см. periods.py)
     lesson_type = Column(String, default="final")  # 'final' = итоговая колонка (в системе только она); 'pair'/'exam' — старые данные до convert_to_finals.py
 
     workload = relationship("Workload", back_populates="lessons")

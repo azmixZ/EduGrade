@@ -96,6 +96,30 @@ function logsGo(delta) {
 // 4. ПОЛЬЗОВАТЕЛИ: таблица с выбором, список в Excel, выдача новых паролей
 // ==========================================
 const usersSelected = new Set();
+let departmentsCache = [];
+
+function headCell(u) {
+    if (u.role === 'admin') return '<span style="color:#94A3B8;">все отделения</span>';
+    const opts = ['<option value="">—</option>'].concat(departmentsCache.map(d =>
+        `<option value="${d.id}" ${u.head_department_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`));
+    return `<select class="egov-select" style="width: 100%; min-width: 0; padding: 4px 6px; font-size: 12px;" title="Заведующий отделением: видит аналитику своего отделения" onchange="setHead(${u.id}, this)">${opts.join('')}</select>`;
+}
+
+async function setHead(id, sel) {
+    const u = usersCache.find(x => x.id === id);
+    const dept = sel.value ? Number(sel.value) : null;
+    const name = dept ? sel.options[sel.selectedIndex].text : '';
+    if (!confirm(dept ? `Назначить «${u.full_name}» заведующим отделением «${name}»?\n\nОн увидит аналитику, группу риска, «Можно подтянуть» и сводные всех групп отделения. Пользователями и паролями управлять не сможет.`
+                      : `Снять с «${u.full_name}» роль заведующего отделением?`)) {
+        sel.value = u.head_department_id || '';
+        return;
+    }
+    try {
+        await api(`/api/admin/users/${id}/head`, 'POST', { department_id: dept });
+        u.head_department_id = dept;
+        if (typeof accToast === 'function') accToast(dept ? `«${u.full_name}» — зав. отделением «${name}»` : 'Роль заведующего снята');
+    } catch (e) { sel.value = u.head_department_id || ''; alert(e.message); }
+}
 
 function renderUsers() {
     const me = localStorage.getItem('kkci_name');
@@ -106,10 +130,24 @@ function renderUsers() {
             : '<span class="risk-badge risk-critical">Отключена</span>';
         return `<tr>
             <td style="text-align:center;"><input type="checkbox" ${usersSelected.has(u.id) ? 'checked' : ''} onchange="usersToggle(${u.id}, this.checked)"></td>
-            <td style="text-align:center;">${u.id}</td><td>${esc(u.username)}</td><td>${esc(u.full_name)}</td><td>${role}</td>
-            <td>${status}</td><td style="color:#64748B;">${esc(u.last_login || 'не входил(а)')}</td></tr>`;
+            <td style="text-align:center;">${u.id}</td><td>${esc(u.username)}</td><td>${esc(u.full_name)}</td><td>${role}</td><td>${headCell(u)}</td>
+            <td>${status}</td><td style="color:#64748B;">${esc(u.last_login || 'не входил(а)')}</td>
+            <td style="text-align:center;">${u.full_name === me ? '' : `<button class="acc-link danger" onclick="deleteUser(${u.id})">Удалить</button>`}</td></tr>`;
     }).join('');
     usersSyncAll();
+}
+
+async function deleteUser(id) {
+    const u = usersCache.find(x => x.id === id);
+    if (!u) return;
+    if (!confirm(`Удалить учётную запись «${u.full_name}» (${u.username})?\n\n` +
+        'Человек больше не сможет войти. Если за ним закреплены ведомости с оценками, система попросит сначала передать их другому преподавателю.')) return;
+    try {
+        const r = await api(`/api/admin/users/${id}`, 'DELETE');
+        usersSelected.delete(id);
+        alert(`Учётная запись «${u.full_name}» удалена.` + (r.curated && r.curated.length ? ` Снято кураторство: ${r.curated.join(', ')}.` : ''));
+        loadUsersView();
+    } catch (e) { alert(e.message); }
 }
 
 function usersSyncAll() {

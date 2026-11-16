@@ -1,5 +1,7 @@
 // frontend/js/app.js
-const API_URL = "http://127.0.0.1:8000";
+// Локально (start.bat: сайт на :5500 или файл index.html) API на 127.0.0.1:8000;
+// на сервере сайт и API за одним nginx — запросы идут на тот же адрес.
+const API_URL = (location.protocol === 'file:' || location.port === '5500') ? "http://127.0.0.1:8000" : "";
 
 let workloads = [];        // нагрузка преподавателя: [{workload_id, group_id, group_name, subject_id, subject_name}]
 let journalData = null;    // текущая открытая ведомость
@@ -20,7 +22,17 @@ function esc(s) {
 }
 
 // Единая обёртка над fetch: подставляет токен, разбирает ошибки, при 401 выходит из системы
+// Период аттестации, выбранный во вкладках (админ и куратор). Пусто = текущий по календарю.
+// Преподавателю сервер всегда отдаёт текущий период, что бы ни пришло в запросе.
+let attPeriod = '';
+let periodsInfo = null;
+function withPeriod(path) {
+    if (!attPeriod || !path.startsWith('/api/') || /[?&]period=/.test(path)) return path;
+    return path + (path.includes('?') ? '&' : '?') + 'period=' + encodeURIComponent(attPeriod);
+}
+
 async function api(path, method = 'GET', body = null) {
+    if (method === 'GET') path = withPeriod(path);
     const headers = {};
     const token = localStorage.getItem('kkci_token');
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -106,6 +118,7 @@ async function handleLogin(event) {
         const data = await response.json();
         localStorage.setItem("kkci_token", data.access_token);
         localStorage.setItem("kkci_role", data.role);
+        localStorage.setItem("kkci_head", data.head || "");
         localStorage.setItem("kkci_name", data.full_name);
         localStorage.setItem("kkci_must_pw", data.must_change_password ? "1" : "");
         initApp();
@@ -113,6 +126,8 @@ async function handleLogin(event) {
         alert("Ошибка сервера. Убедитесь, что бэкенд запущен.");
     }
 }
+
+function isHead() { return localStorage.getItem("kkci_role") !== "admin" && !!localStorage.getItem("kkci_head"); }
 
 function initApp() {
     if (!localStorage.getItem("kkci_token")) return;
@@ -130,6 +145,17 @@ function initApp() {
         $("admin-menu").style.display = "block";
         $("teacher-menu").style.display = "none";
         switchView('dashboard-view', document.querySelector('#admin-menu .nav-item'));
+    } else if (isHead()) {
+        // заведующий отделением: своя ведомость + аналитика своего отделения, без журнала и управления учётками
+        $("current-user-role").textContent = "Зав. отделением · " + localStorage.getItem("kkci_head");
+        $("current-user-role").style.color = "#3B82F6";
+        $("admin-menu").style.display = "block";
+        $("teacher-menu").style.display = "block";
+        document.querySelectorAll('#admin-menu .admin-strict').forEach(el => el.style.display = 'none');
+        $("analytics-title").textContent = "Аналитика отделения";
+        $("dept-chart-title").textContent = "Успеваемость отделения: " + localStorage.getItem("kkci_head");
+        switchView('dashboard-view', document.querySelector('#admin-menu .nav-item'));
+        loadWorkloads();
     } else {
         $("current-user-role").textContent = "Преподаватель";
         $("admin-menu").style.display = "none";
@@ -137,6 +163,14 @@ function initApp() {
         switchView('grid-view', document.querySelector('#teacher-menu .nav-item'));
         loadWorkloads();
     }
+    // права могли поменяться с прошлого входа (назначили / сняли заведующего) — сверяемся с сервером
+    if (role !== "admin") api('/api/me').then(m => {
+        if ((m.head || "") !== (localStorage.getItem("kkci_head") || "")) {
+            localStorage.setItem("kkci_head", m.head || "");
+            location.reload();
+        }
+    }).catch(() => {});
+    if (typeof setupCurator === 'function') setupCurator();   // вкладки куратора и сверки
     if (typeof setupAccount === 'function') setupAccount();   // кнопка «Сменить пароль» и принудительная смена
 }
 
@@ -145,7 +179,10 @@ function logout() {
     location.reload();
 }
 
+let currentView = null, currentViewBtn = null;
 function switchView(viewId, btnElement) {
+    currentView = viewId; currentViewBtn = btnElement || null;
+    if (typeof periodTabsFor === 'function') periodTabsFor(viewId);
     document.querySelectorAll('.view-panel').forEach(el => { el.style.display = 'none'; el.classList.remove('animate-fade-up'); });
     document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
 
@@ -160,6 +197,9 @@ function switchView(viewId, btnElement) {
     if (['dashboard-view', 'performance-view', 'analytics-view'].includes(viewId)) loadAdminView(viewId);
     if (viewId === 'logs-view' && typeof loadLogsView === 'function') loadLogsView();
     if (viewId === 'pullup-view' && typeof loadPullupView === 'function') loadPullupView();
+    if (viewId === 'curator-view' && typeof loadCuratorView === 'function') loadCuratorView();
+    if (viewId === 'reconcile-view' && typeof loadReconcileView === 'function') loadReconcileView();
+    if (viewId === 'access-view' && typeof loadAccessView === 'function') loadAccessView();
 }
 
 // ==========================================
@@ -181,6 +221,7 @@ async function loadWorkloads() {
     select.onchange = onGroupChange;
     $('subject-selector').onchange = onSubjectChange;
 
+    if (typeof renderJournalHints === 'function') renderJournalHints();   // notify.js: названия групп и предметов в подсказке
     if (!workloads.length) showSheetMessage('За вами не закреплена учебная нагрузка. Обратитесь к администратору.');
     else showSheetMessage('Выберите группу и предмет, чтобы открыть ведомость.');
 }
@@ -220,6 +261,7 @@ async function loadJournal() {
     try {
         journalData = await api(`/api/journal/${activeGroupId}?subject_id=${activeSubjectId}`);
         renderTable();
+        if (typeof loadHints === 'function') { await loadHints(); markSingleThrees(); }   // notify.js
     } catch (e) {
         showSheetMessage(e.message);
     }
@@ -230,7 +272,9 @@ function renderTable() {
     const tbody = document.querySelector('#grade-sheet tbody');
     if (!journalData) return;
 
-    const lesson = journalData.lessons[0];              // единственная колонка — итоговая
+    const lesson = journalData.lessons[0];              // единственная колонка — итоговая за период
+    const pt = $('sheet-period');
+    if (pt) pt.textContent = journalData.period_title ? `Сейчас идёт: ${journalData.period_title}` : '';
     const gradeMap = new Map(journalData.grades.map(g => [String(g.student_id), g.value]));
 
     thead.innerHTML = '<tr><th class="row-num-col">№</th><th class="frozen-col">ФИО студента</th>' +
@@ -556,7 +600,7 @@ function renderGroupCharts() {
 // ==========================================
 async function loadUsersView() {
     try {
-        usersCache = await api('/api/admin/users');
+        [usersCache, departmentsCache] = await Promise.all([api('/api/admin/users'), api('/api/admin/departments')]);
         renderUsers();                 // таблица с выбором и статусами — в extras.js
     } catch (e) {
         alert(e.message);
@@ -590,7 +634,7 @@ async function downloadFile(path, fallbackName, btn) {
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Формирую…'; }
     try {
         const token = localStorage.getItem('kkci_token');
-        const res = await fetch(API_URL + path, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(API_URL + withPeriod(path), { headers: { Authorization: `Bearer ${token}` } });
         if (res.status === 401) { logout(); return; }
         if (!res.ok) {
             let msg = `Ошибка сервера (${res.status})`;
