@@ -16,7 +16,7 @@ and Excel reports in one click. Built for and used at a college in Kazakhstan.
 - [Security](#security)
 - [Stack](#stack)
 - [Try it with demo data](#try-it-with-demo-data)
-- [Real data](#real-data) · [Configuration](#configuration) · [Layout](#layout)
+- [Real data](#real-data) · [Configuration](#configuration) · [Layout](#layout) · [License](#license)
 
 ## Roles
 
@@ -216,3 +216,14 @@ docs/       screenshots (generated from the demo college)
 run.py      start and maintenance
 start.bat   the same for Windows
 ```
+
+## License
+
+The source is published so that you can read it and try it, under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). You may use, study and modify it for **noncommercial purposes**
+(personal use, learning, research, evaluation). **Commercial use** — running it for a paying customer, selling it,
+offering it as a service, or using it in a commercial product — needs a separate written agreement with the author.
+Contact the repository owner on GitHub.
+
+The license covers the code of this repository only. The screenshots use fictional demo data.
+
